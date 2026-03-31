@@ -1,9 +1,5 @@
 [build]
-  command = "python app.py"
+  publish = "."
 
 [build.environment]
   PYTHON_VERSION = "3.13"
-
-[[headers]]
-  X-Frame-Options = "DENY"
-  X-XSS-Protection = "1; mode=block"
