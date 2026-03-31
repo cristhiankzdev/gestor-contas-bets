@@ -623,4 +623,8 @@ def api_get_history():
 init_db()
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    import os
+    # Only run server in development, not during Netlify builds
+    # Netlify build will set FLASK_DEBUG=0 by default
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(debug=debug, host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))

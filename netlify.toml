@@ -1,5 +1,5 @@
 [build]
-  command = "python app.py"
+  command = "echo \"Skipping Flask server start during Netlify build\""
 
 [build.environment]
   PYTHON_VERSION = "3.13"
