@@ -1,0 +1,375 @@
+/* ── BASE ──────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  background-color: #f4f6f9;
+  color: #1a1a2e;
+  font-family: system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+/* ── NAVBAR ───────────────────────────────────────── */
+.navbar {
+  background-color: #fff;
+  border-bottom: 1px solid #e2e6ea;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.navbar-brand { color: #1a1a2e !important; }
+.navbar-text  { color: #1a1a2e; }
+
+/* ── MAIN WRAP ────────────────────────────────────── */
+.calc-wrap {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px 16px;
+  overflow: hidden;
+}
+
+.calc-wrap > * {
+  max-height: 90vh;
+}
+
+/* ── TABLE ────────────────────────────────────────── */
+.calc-table {
+  font-size: 0.875rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Remove scrollbar horizontal da calculadora */
+.calc-wrap .table-responsive {
+  overflow-x: visible !important;
+}
+
+.calc-table th,
+.calc-table td {
+  vertical-align: middle;
+  padding: 0.4rem 0.35rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.calc-table thead th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6c757d;
+  border-bottom: 2px solid #dee2e6;
+  white-space: nowrap;
+}
+
+/* Column widths */
+.col-num    { width: 160px; }
+.col-odd    { width: 210px; min-width: 190px; }
+.col-comm   { width: 96px;  min-width: 84px; }
+.col-stake  { min-width: 105px; }
+.col-liab   { min-width: 115px; }
+.col-anchor { width: 72px; }
+.col-profit { width: 110px; min-width: 90px; }
+
+/* Odd shortcut buttons */
+.odd-shortcut-btn {
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  min-width: 42px;
+}
+
+.odd-shortcut-btn.active {
+  background-color: #198754;
+  border-color: #198754;
+  color: #ffffff;
+}
+
+.btn-xs {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+}
+
+/* ── BET NUMBER CELL ──────────────────────────────── */
+.bet-num-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.bet-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ── BACK / LAY TOGGLE ────────────────────────────── */
+.btn-bet-type {
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-color: #dee2e6;
+  color: #9ca3af;
+  background: transparent;
+  line-height: 1.4;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.btn-bet-type.active {
+  background: #1e3a5f;
+  border-color: #1e3a5f;
+  color: #fff;
+}
+
+.btn-bet-type.active.btn-lay-active {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+/* ── INPUTS ───────────────────────────────────────── */
+.calc-input {
+  font-size: 0.83rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.calc-input:focus {
+  box-shadow: 0 0 0 0.18rem rgba(59,130,246,0.18);
+}
+
+.calc-input.is-anchor {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+  font-weight: 600;
+}
+
+.calc-input.is-calculated {
+  background-color: #f8f9fa;
+  color: #495057;
+}
+
+/* ── ANCHOR RADIO ─────────────────────────────────── */
+.anchor-radio {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: #3b82f6;
+}
+
+/* ── TOTAL ROW ────────────────────────────────────── */
+.total-row td {
+  border-top: 2px solid #dee2e6 !important;
+  background: #f8f9fa;
+}
+
+/* ── SUREBET INDICATOR ────────────────────────────── */
+.badge-surebet {
+  background: linear-gradient(135deg, #15803d, #22c55e);
+  font-size: 0.85rem;
+}
+
+.badge-nosurebet {
+  background: linear-gradient(135deg, #b91c1c, #ef4444);
+  font-size: 0.85rem;
+}
+
+/* ── INLINE PROFIT COLUMN ─────────────────────────── */
+.profit-inline {
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ── PROFIT SUMMARY BAR ───────────────────────────── */
+#profit-section {
+  margin-top: 0.6rem;
+}
+
+.profit-summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+}
+
+.profit-summary-left,
+.profit-summary-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.profit-summary-divider {
+  width: 1px;
+  align-self: stretch;
+  background: #dee2e6;
+}
+
+.profit-summary-right {
+  flex: 1;
+  align-items: flex-end;
+}
+
+/* ── RESPONSIVE ───────────────────────────────────── */
+@media (max-width: 540px) {
+  .outcomes-grid { grid-template-columns: 1fr; }
+  .profit-summary { flex-direction: column; align-items: stretch; }
+  .profit-summary-divider { width: 100%; height: 1px; }
+  .profit-summary-right { align-items: flex-start; }
+}
+
+/* ── BET NUM CELL ROW ─────────────────────────────── */
+.bet-num-top {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* ── ACCOUNT SELECT ───────────────────────────────── */
+.calc-acc-select {
+  font-size: 0.7rem;
+  padding: 1px 18px 1px 4px;
+  height: 22px;
+  max-width: 150px;
+  border-color: #dee2e6;
+  border-radius: 5px;
+  color: #6b7280;
+  background-color: #fff;
+  cursor: pointer;
+}
+
+.calc-acc-select:focus {
+  border-color: #3b82f6;
+  outline: none;
+}
+
+/* The badge+BL-toggle row inside bet-num-cell */
+.bet-num-cell > .d-flex {
+  align-items: center;
+}
+
+/* ── ACCOUNT PICKER ───────────────────────────────── */
+.acc-picker { position: relative; }
+
+.aph-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 6px;
+  font-size: 0.72rem;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 5px;
+  cursor: pointer;
+  min-width: 110px;
+  max-width: 150px;
+  height: 24px;
+  color: #6b7280;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.aph-btn:hover   { border-color: #9ca3af; }
+.aph-btn.has-pick { color: #374151; font-weight: 600; }
+.aph-btn.has-warn {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: #fff5f5;
+}
+
+.aph-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aph-chevron {
+  font-size: 0.55rem;
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
+/* ── PICKER PORTAL ────────────────────────────────── */
+#acc-picker-portal {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 9px;
+  box-shadow: 0 6px 22px rgba(0,0,0,0.13);
+  padding: 4px;
+  min-width: 165px;
+  max-height: 260px;
+  overflow-y: auto;
+  top: auto;
+  bottom: auto;
+}
+
+#acc-picker-portal.open { display: block; }
+
+.aph-item {
+  padding: 5px 9px;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #374151;
+  transition: background 0.08s;
+}
+
+.aph-item:hover { background: #f3f4f6; }
+
+.aph-item.selected {
+  background: #eff6ff;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.aph-item.used-warn {
+  color: #b0b5bd;
+  background: rgba(239, 68, 68, 0.04);
+}
+.aph-item.used-warn .aph-item-name { text-decoration: line-through; }
+.aph-item.used-warn:hover { background: rgba(239, 68, 68, 0.09); }
+
+.aph-item.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.aph-warn-icon {
+  font-size: 0.62rem;
+  color: #ef4444;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.aph-bolsa-tag {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #fff;
+  margin-left: auto;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}

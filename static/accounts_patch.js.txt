@@ -1,0 +1,13 @@
+    console.log("[BUILD HEADERS] Carregando nomes de operações...");
+    const opNames = getOpNames();
+    console.log("[BUILD HEADERS] Nomes de operações:", opNames);
+    opNames.forEach(name => {
+      console.log("[BUILD HEADERS] Criando coluna para operação:", name);
+      const th = document.createElement("th");
+      th.className = "col-op";
+      th.dataset.opName = name;
+      th.textContent = name;
+      tr.appendChild(th);
+    });
+
+    console.log("[BUILD HEADERS] Cabealho concluído.");

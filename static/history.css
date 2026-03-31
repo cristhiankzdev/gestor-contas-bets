@@ -1,0 +1,103 @@
+/* ── DASHBOARD CARDS ──────────────────────────────── */
+.hist-dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.hist-card {
+  background: #fff;
+  border: 1px solid #e2e6ea;
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.hist-card-label {
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.hist-card-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #1a1a2e;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── DAY CARD ─────────────────────────────────────── */
+.hist-day-card {
+  background: #fff;
+  border: 1px solid #e2e6ea;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.hist-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hist-day-date {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hist-day-count {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #9ca3af;
+  background: #e9ecef;
+  border-radius: 20px;
+  padding: 1px 7px;
+  margin-left: 6px;
+}
+
+.hist-day-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hist-day-pl {
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hist-day-ops {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* reuse op-row from accounts.css */
+.hist-day-ops .op-row {
+  border-radius: 6px;
+  background: #fafbfd;
+}
+
+/* ── Animation ─────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin { animation: spin 1s linear infinite; }
