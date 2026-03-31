@@ -1,12 +1,8 @@
 [build]
-  command = "echo \"Skipping Flask server start during Netlify build\""
+  command = "python app.py"
 
 [build.environment]
   PYTHON_VERSION = "3.13"
-
-[[redirects]]
-  from = "/login"
-  to = "/"
 
 [[headers]]
   X-Frame-Options = "DENY"
