@@ -164,15 +164,11 @@ def _calculate_account_op_counts(uid):
     today = date.today().isoformat()
     op_counts = {}
 
-    with closing(get_db()) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT entries FROM operations WHERE user_id=? AND op_date=? AND (archived IS NULL OR archived=0)",
-            (uid, today)
-        )
-        operations = cursor.fetchall()
+    # Buscar operações do Supabase para o dia de hoje
+    response = _sb.table("operations").select("entries").eq("user_id", uid).eq("op_date", today).or_("archived.is.null,archived.eq.0").execute()
 
-        for op in operations:
+    if response.data:
+        for op in response.data:
             entries = json.loads(op["entries"] or "[]")
             for entry in entries:
                 account_id = entry.get("account_id")
@@ -336,13 +332,17 @@ def api_get_accounts():
     uid = session["user_id"]
     print(f"[DEBUG] api_get_accounts - User ID from session: {uid}")
 
-    # Calcula dinamicamente as contagens de operações
+    # Calcula dinamicamente as contagens de operações do Supabase
     op_counts = _calculate_account_op_counts(uid)
 
-    with closing(get_db()) as conn:
-        rows = conn.execute("SELECT * FROM accounts WHERE user_id=? ORDER BY sort_order, rowid", (uid,)).fetchall()
-        print(f"[DEBUG] api_get_accounts - Found {len(rows)} accounts for user {uid}")
-    accounts = [_acc(r, op_counts.get(r["id"], 0)) for r in rows]
+    # Buscar contas do Supabase filtrando por user_id
+    response = _sb.table("accounts").select("*").eq("user_id", uid).order("sort_order").execute()
+
+    accounts = []
+    if response.data:
+        accounts = [_acc(row, op_counts.get(row["id"], 0)) for row in response.data]
+        print(f"[DEBUG] api_get_accounts - Found {len(accounts)} accounts for user {uid}")
+
     return jsonify({"accounts": accounts, "settings": _settings()})
 
 
@@ -354,24 +354,40 @@ def api_create_account():
     print(f"[DEBUG] api_create_account - User ID: {uid}")
     print(f"[DEBUG] api_create_account - Request body: {body}")
 
-    aid  = str(uuid.uuid4())
-    with closing(get_db()) as conn:
-        max_ord = conn.execute("SELECT COALESCE(MAX(sort_order),0)+1 FROM accounts WHERE user_id=?", (uid,)).fetchone()[0]
-        print(f"[DEBUG] api_create_account - Max sort_order: {max_ord}")
+    # Buscar o maior sort_order para o usuário
+    response = _sb.table("accounts").select("sort_order").eq("user_id", uid).order("sort_order", desc=True).limit(1).execute()
+    max_ord = 1
+    if response.data and len(response.data) > 0:
+        max_ord = response.data[0]["sort_order"] + 1
+    print(f"[DEBUG] api_create_account - Max sort_order: {max_ord}")
 
-        account_name = body.get("name", "Nova Conta")
-        print(f"[DEBUG] api_create_account - Creating account: {account_name}")
+    account_name = body.get("name", "Nova Conta")
+    print(f"[DEBUG] api_create_account - Creating account: {account_name}")
 
-        # Corrigido: Agora inclui as 12 colunas necessárias
-        conn.execute(
-            "INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (aid, account_name, body.get("status", "Normal"),
-             None, None, 0, "{}", '["","","","","",""]', max_ord, uid, 0, '')
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM accounts WHERE id=? AND user_id=?", (aid, uid)).fetchone()
+    # Criar conta no Supabase
+    new_account = {
+        "id": str(uuid.uuid4()),
+        "name": account_name,
+        "status": body.get("status", "Normal"),
+        "freebet": None,
+        "saldo": None,
+        "condition": 0,
+        "op_conditions": "{}",
+        "notes": '["","","","","",""]',
+        "sort_order": max_ord,
+        "user_id": uid,
+        "op_count": 0,
+        "op_count_date": ''
+    }
+
+    response = _sb.table("accounts").insert(new_account).execute()
+
+    if response.data and len(response.data) > 0:
+        row = response.data[0]
         print(f"[DEBUG] api_create_account - Account created successfully: {row['name']}")
-    return jsonify(_acc(row)), 201
+        return jsonify(_acc(row, 0)), 201
+    else:
+        return jsonify({"error": "Failed to create account"}), 500
 
 
 @app.route("/api/accounts/<aid>", methods=["PUT"])
@@ -379,30 +395,42 @@ def api_create_account():
 def api_update_account(aid):
     uid  = session["user_id"]
     body = request.get_json(silent=True) or {}
-    with closing(get_db()) as conn:
-        row = conn.execute("SELECT * FROM accounts WHERE id=? AND user_id=?", (aid, uid)).fetchone()
-        if not row:
-            return jsonify({"error": "not found"}), 404
-        a = _acc(row)
-        for f in ("name", "status", "freebet", "saldo", "condition", "op_conditions", "notes"):
-            if f in body:
-                a[f] = body[f]
-        conn.execute(
-            "UPDATE accounts SET name=?,status=?,freebet=?,saldo=?,condition=?,op_conditions=?,notes=? WHERE id=? AND user_id=?",
-            (a["name"], a["status"], a["freebet"], a["saldo"], a["condition"],
-             json.dumps(a["op_conditions"]), json.dumps(a["notes"]), aid, uid)
-        )
-        conn.commit()
-    return jsonify(a)
+
+    # Buscar a conta no Supabase
+    response = _sb.table("accounts").select("*").eq("id", aid).eq("user_id", uid).execute()
+
+    if not response.data or len(response.data) == 0:
+        return jsonify({"error": "not found"}), 404
+
+    a = _acc(response.data[0])
+    for f in ("name", "status", "freebet", "saldo", "condition", "op_conditions", "notes"):
+        if f in body:
+            a[f] = body[f]
+
+    # Atualizar no Supabase
+    update_data = {
+        "name": a["name"],
+        "status": a["status"],
+        "freebet": a["freebet"],
+        "saldo": a["saldo"],
+        "condition": a["condition"],
+        "op_conditions": json.dumps(a["op_conditions"]),
+        "notes": json.dumps(a["notes"])
+    }
+
+    response = _sb.table("accounts").update(update_data).eq("id", aid).eq("user_id", uid).execute()
+
+    if response.data and len(response.data) > 0:
+        return jsonify(a)
+    else:
+        return jsonify({"error": "Failed to update account"}), 500
 
 
 @app.route("/api/accounts/<aid>", methods=["DELETE"])
 @login_required
 def api_delete_account(aid):
     uid = session["user_id"]
-    with closing(get_db()) as conn:
-        conn.execute("DELETE FROM accounts WHERE id=? AND user_id=?", (aid, uid))
-        conn.commit()
+    _sb.table("accounts").delete().eq("id", aid).eq("user_id", uid).execute()
     return jsonify({"ok": True})
 
 
@@ -411,9 +439,13 @@ def api_delete_account(aid):
 def api_reset_accounts():
     uid         = session["user_id"]
     empty_notes = json.dumps(["", "", "", "", "", ""])
-    with closing(get_db()) as conn:
-        conn.execute("UPDATE accounts SET condition=0, op_conditions='{}', notes=? WHERE user_id=?", (empty_notes, uid))
-        conn.commit()
+
+    _sb.table("accounts").update({
+        "condition": 0,
+        "op_conditions": "{}",
+        "notes": empty_notes
+    }).eq("user_id", uid).execute()
+
     return jsonify({"ok": True})
 
 
