@@ -256,8 +256,15 @@ def login_post():
         session["user_name"] = (user.user_metadata or {}).get("name", email.split("@")[0])
         return jsonify({"ok": True})
     except Exception as exc:
-        print(f"[LOGIN ERROR] {type(exc).__name__}: {exc}")
-        return jsonify({"error": "Email ou senha incorretos."}), 401
+        error_msg = str(exc)
+        print(f"[LOGIN ERROR] {type(exc).__name__}: {error_msg}")
+        # Fornece mensagens de erro mais específicas
+        if "Invalid login credentials" in error_msg:
+            return jsonify({"error": "Email ou senha incorretos."}), 401
+        elif "Email not confirmed" in error_msg:
+            return jsonify({"error": "Email não confirmado. Verifique sua caixa de entrada."}), 401
+        else:
+            return jsonify({"error": f"Erro ao fazer login: {error_msg}"}), 401
 
 
 @app.route("/register", methods=["POST"])
@@ -327,11 +334,14 @@ def historico():
 @login_required
 def api_get_accounts():
     uid = session["user_id"]
+    print(f"[DEBUG] api_get_accounts - User ID from session: {uid}")
+
     # Calcula dinamicamente as contagens de operações
     op_counts = _calculate_account_op_counts(uid)
 
     with closing(get_db()) as conn:
         rows = conn.execute("SELECT * FROM accounts WHERE user_id=? ORDER BY sort_order, rowid", (uid,)).fetchall()
+        print(f"[DEBUG] api_get_accounts - Found {len(rows)} accounts for user {uid}")
     accounts = [_acc(r, op_counts.get(r["id"], 0)) for r in rows]
     return jsonify({"accounts": accounts, "settings": _settings()})
 
@@ -341,16 +351,26 @@ def api_get_accounts():
 def api_create_account():
     uid  = session["user_id"]
     body = request.get_json(silent=True) or {}
+    print(f"[DEBUG] api_create_account - User ID: {uid}")
+    print(f"[DEBUG] api_create_account - Request body: {body}")
+
     aid  = str(uuid.uuid4())
     with closing(get_db()) as conn:
         max_ord = conn.execute("SELECT COALESCE(MAX(sort_order),0)+1 FROM accounts WHERE user_id=?", (uid,)).fetchone()[0]
+        print(f"[DEBUG] api_create_account - Max sort_order: {max_ord}")
+
+        account_name = body.get("name", "Nova Conta")
+        print(f"[DEBUG] api_create_account - Creating account: {account_name}")
+
+        # Corrigido: Agora inclui as 12 colunas necessárias
         conn.execute(
-            "INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (aid, body.get("name", "Nova Conta"), body.get("status", "Normal"),
-             None, None, 0, "{}", '["","","","","",""]', max_ord, uid)
+            "INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (aid, account_name, body.get("status", "Normal"),
+             None, None, 0, "{}", '["","","","","",""]', max_ord, uid, 0, '')
         )
         conn.commit()
         row = conn.execute("SELECT * FROM accounts WHERE id=? AND user_id=?", (aid, uid)).fetchone()
+        print(f"[DEBUG] api_create_account - Account created successfully: {row['name']}")
     return jsonify(_acc(row)), 201
 
 

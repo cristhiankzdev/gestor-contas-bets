@@ -173,9 +173,17 @@
           }),
         });
         const data = await res.json();
-        if (res.ok) { window.location.href = "/"; }
-        else { showAlert(data.error || "Erro ao entrar."); }
-      } catch { showAlert("Erro de conexão."); }
+        if (res.ok) {
+          console.log('[LOGIN] Login successful');
+          window.location.href = "/";
+        } else {
+          console.error('[LOGIN] Login failed:', data.error);
+          showAlert(data.error || "Erro ao entrar.");
+        }
+      } catch (err) {
+        console.error('[LOGIN] Connection error:', err);
+        showAlert("Erro de conexão. Verifique sua internet e tente novamente.");
+      }
       finally { btn.disabled = false; }
     });
 
@@ -195,10 +203,21 @@
           }),
         });
         const data = await res.json();
-        if (res.status === 202) { showAlert(data.error, "warning"); }
-        else if (res.ok) { window.location.href = "/"; }
-        else { showAlert(data.error || "Erro ao criar conta."); }
-      } catch { showAlert("Erro de conexão."); }
+        if (res.status === 202) {
+          console.log('[REGISTER] Account created, email confirmation needed');
+          showAlert(data.error, "warning");
+        }
+        else if (res.ok) {
+          console.log('[REGISTER] Registration successful');
+          window.location.href = "/";
+        } else {
+          console.error('[REGISTER] Registration failed:', data.error);
+          showAlert(data.error || "Erro ao criar conta.");
+        }
+      } catch (err) {
+        console.error('[REGISTER] Connection error:', err);
+        showAlert("Erro de conexão. Verifique sua internet e tente novamente.");
+      }
       finally { btn.disabled = false; }
     });
   </script>

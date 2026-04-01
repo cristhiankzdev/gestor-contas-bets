@@ -44,19 +44,32 @@
     const opts = { method, headers: { "Content-Type": "application/json" } };
     if (body !== undefined) opts.body = JSON.stringify(body);
     const res = await fetch(path, opts);
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      console.error(`[API ERROR] ${method} ${path}:`, data.error || res.statusText);
+      throw new Error(data.error || `API error: ${res.status}`);
+    }
+    return data;
   }
 
   async function load() {
     try {
+      console.log('[DEBUG] Loading accounts...');
       const data = await api("GET", "/api/accounts");
+      console.log('[DEBUG] Accounts loaded:', data);
       accounts = data.accounts || [];
       settings = data.settings || settings;
+      console.log('[DEBUG] Total accounts:', accounts.length);
       render();
     } catch (err) {
+      console.error('[ERROR] Failed to load accounts:', err);
       // Se houver erro de auth, redireciona para login
-      if (err.message.includes('unauthorized') || err.message.includes('401')) {
+      if (err.error === 'unauthorized' || err.message?.includes('unauthorized') || err.message?.includes('401')) {
+        console.log('[AUTH] Unauthorized, redirecting to login');
         window.location.href = '/login';
+      } else {
+        console.error('[ERROR] Detailed error:', err);
+        alert('Erro ao carregar contas. Tente recarregar a página.');
       }
     }
   }
@@ -502,11 +515,20 @@
   });
 
   // ── Gerir contas ───────────────────────────────────
-  const modalManage = new bootstrap.Modal($("modal-manage"));
+  console.log('[DEBUG] Initializing modal-manage');
+  const modalManageElement = $("modal-manage");
+  if (!modalManageElement) {
+    console.error('[ERROR] modal-manage element not found!');
+  } else {
+    console.log('[DEBUG] modal-manage element found');
+  }
+  const modalManage = new bootstrap.Modal(modalManageElement);
 
   function openManageModal() {
+    console.log('[DEBUG] openManageModal called');
     renderManageList();
     $("new-account-name").value = "";
+    console.log('[DEBUG] Showing modal-manage');
     modalManage.show();
   }
 
@@ -586,24 +608,51 @@
     });
   }
 
-  $("btn-add-new-account").addEventListener("click", async () => {
+  $("btn-add-new-account").addEventListener("click", async (e) => {
+    e.preventDefault();
+    console.log('[DEBUG] btn-add-new-account clicked');
+
     const name = $("new-account-name").value.trim();
-    if (!name) return;
-    const acc = await api("POST", "/api/accounts", { name });
-    accounts.push(acc);
-    $("new-account-name").value = "";
-    render();
-    renderManageList();
+    console.log('[DEBUG] Account name:', name);
+
+    if (!name) {
+      console.log('[DEBUG] Name is empty, returning');
+      alert("Por favor, digite o nome da conta.");
+      return;
+    }
+
+    try {
+      console.log('[DEBUG] Calling API to create account...');
+      const acc = await api("POST", "/api/accounts", { name });
+      console.log('[DEBUG] Account created:', acc);
+
+      accounts.push(acc);
+      $("new-account-name").value = "";
+      render();
+      renderManageList();
+    } catch (err) {
+      console.error('[ERROR] Failed to create account:', err);
+      alert("Erro ao criar conta: " + err.message);
+    }
   });
 
   const btnAddEl = $("btn-add");
   if (btnAddEl) {
+    console.log('[DEBUG] Found btn-add element');
     btnAddEl.addEventListener("click", openManageModal);
+  } else {
+    console.log('[DEBUG] btn-add element not found');
   }
 
   const btnAddEmptyEl = $("btn-add-empty");
   if (btnAddEmptyEl) {
-    btnAddEmptyEl.addEventListener("click", openManageModal);
+    console.log('[DEBUG] Found btn-add-empty element');
+    btnAddEmptyEl.addEventListener("click", () => {
+      console.log('[DEBUG] btn-add-empty clicked');
+      openManageModal();
+    });
+  } else {
+    console.log('[DEBUG] btn-add-empty element not found');
   }
 
   // Botão de configurações abre modal centralizado
@@ -798,6 +847,32 @@
   }
 
   // ── Init ───────────────────────────────────────────
+  console.log('[DEBUG] accounts.js initializing...');
+  console.log('[DEBUG] Checking DOM elements...');
+
+  // Check for critical elements
+  const btnAddNewAccount = $("btn-add-new-account");
+  if (!btnAddNewAccount) {
+    console.error('[ERROR] btn-add-new-account element not found!');
+  } else {
+    console.log('[DEBUG] btn-add-new-account element found');
+  }
+
+  const btnAddEmpty = $("btn-add-empty");
+  if (!btnAddEmpty) {
+    console.error('[ERROR] btn-add-empty element not found!');
+  } else {
+    console.log('[DEBUG] btn-add-empty element found');
+  }
+
+  const modalManageElement = $("modal-manage");
+  if (!modalManageElement) {
+    console.error('[ERROR] modal-manage element not found!');
+  } else {
+    console.log('[DEBUG] modal-manage element found');
+  }
+
+  console.log('[DEBUG] Starting load process...');
   load().then(() => loadOperations());
 })();
 
