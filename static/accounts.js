@@ -858,20 +858,6 @@
     console.log('[DEBUG] btn-add-new-account element found');
   }
 
-  const btnAddEmpty = $("btn-add-empty");
-  if (!btnAddEmpty) {
-    console.error('[ERROR] btn-add-empty element not found!');
-  } else {
-    console.log('[DEBUG] btn-add-empty element found');
-  }
-
-  const modalManageElement = $("modal-manage");
-  if (!modalManageElement) {
-    console.error('[ERROR] modal-manage element not found!');
-  } else {
-    console.log('[DEBUG] modal-manage element found');
-  }
-
   console.log('[DEBUG] Starting load process...');
   load().then(() => loadOperations());
 })();
