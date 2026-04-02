@@ -1,4 +1,3 @@
 flask
-supabase
+werkzeug
 python-dotenv
-gunicorn

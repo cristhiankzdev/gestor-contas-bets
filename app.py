@@ -1,18 +1,37 @@
 import json
 import os
 import secrets
+import shutil
 import sqlite3
+import sys
 import uuid
 from contextlib import closing
 from datetime import datetime, date
 from functools import wraps
 from dotenv import load_dotenv
-from supabase import create_client, Client
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
+from version import __version__, __app_name__
 
 load_dotenv()
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "bets.db")
+# Detectar se está rodando como .exe ou como Python
+if getattr(sys, 'frozen', False):
+    # Rodando como .exe compilado
+    APP_DATA_DIR = os.path.join(os.getenv('APPDATA'), 'GestorContasBETS')
+else:
+    # Rodando como Python script (desenvolvimento)
+    APP_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+
+# Garantir que o diretório existe
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(APP_DATA_DIR, "bets.db")
+BACKUP_DIR = os.path.join(APP_DATA_DIR, "backups")
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+print(f"[DEBUG] App data directory: {APP_DATA_DIR}")
+print(f"[DEBUG] Database path: {DB_PATH}")
 
 
 def _get_or_create_secret():
@@ -31,16 +50,6 @@ def _get_or_create_secret():
 app = Flask(__name__)
 app.secret_key = _get_or_create_secret()
 
-_SUPABASE_URL = os.getenv("SUPABASE_URL")
-_SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
-if not _SUPABASE_URL or not _SUPABASE_KEY:
-    raise RuntimeError(
-        "Variáveis de ambiente SUPABASE_URL e SUPABASE_ANON_KEY são obrigatórias. "
-        "Copie .env.example para .env e preencha as credenciais."
-    )
-
-_sb: Client = create_client(_SUPABASE_URL, _SUPABASE_KEY)
-
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
 def get_db():
@@ -54,7 +63,14 @@ def init_db():
     with closing(get_db()) as conn:
         c = conn.cursor()
         c.executescript("""
-            -- users table replaced by Supabase Auth
+            -- Local users table (authentication)
+            CREATE TABLE IF NOT EXISTS users (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                email         TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at    TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS accounts (
                 id          TEXT PRIMARY KEY,
                 name        TEXT NOT NULL DEFAULT '',
@@ -164,12 +180,15 @@ def _calculate_account_op_counts(uid):
     today = date.today().isoformat()
     op_counts = {}
 
-    # Buscar operações do Supabase para o dia de hoje
-    response = _sb.table("operations").select("entries").eq("user_id", uid).eq("op_date", today).or_("archived.is.null,archived.eq.0").execute()
+    # Buscar operações do SQLite para o dia de hoje
+    with closing(get_db()) as conn:
+        rows = conn.execute(
+            "SELECT entries FROM operations WHERE user_id=? AND op_date=? AND (archived IS NULL OR archived=0)",
+            (uid, today)
+        ).fetchall()
 
-    if response.data:
-        for op in response.data:
-            entries = json.loads(op["entries"] or "[]")
+        for row in rows:
+            entries = json.loads(row["entries"] or "[]")
             for entry in entries:
                 account_id = entry.get("account_id")
                 if account_id:
@@ -220,6 +239,39 @@ def _settings():
     return {"pair_colors": json.loads(r["value"]) if r else ["#3b82f6", "#22c55e", "#eab308", "#a855f7", "#ef4444", "#f97316"]}
 
 
+# ── Backup & Restore ───────────────────────────────────────────────────────────
+
+def backup_database():
+    """Cria backup do banco de dados ao iniciar o app."""
+    if not os.path.exists(DB_PATH):
+        print(f"[BACKUP] No database to backup at {DB_PATH}")
+        return
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(BACKUP_DIR, f"bets_backup_{timestamp}.db")
+
+    try:
+        shutil.copy2(DB_PATH, backup_path)
+        print(f"[BACKUP] Created: {backup_path}")
+
+        # Manter apenas os últimos 10 backups
+        if os.path.exists(BACKUP_DIR):
+            backups = sorted(
+                [f for f in os.listdir(BACKUP_DIR) if f.endswith('.db')],
+                reverse=True
+            )
+            for old_backup in backups[10:]:
+                old_path = os.path.join(BACKUP_DIR, old_backup)
+                os.remove(old_path)
+                print(f"[BACKUP] Removed old backup: {old_backup}")
+    except Exception as e:
+        print(f"[BACKUP ERROR] Failed to create backup: {e}")
+
+
+# Criar backup ao iniciar o app
+backup_database()
+
+
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 
 def login_required(f):
@@ -245,22 +297,21 @@ def login_post():
     body     = request.get_json(silent=True) or {}
     email    = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
-    try:
-        res = _sb.auth.sign_in_with_password({"email": email, "password": password})
-        user = res.user
-        session["user_id"]   = user.id
-        session["user_name"] = (user.user_metadata or {}).get("name", email.split("@")[0])
-        return jsonify({"ok": True})
-    except Exception as exc:
-        error_msg = str(exc)
-        print(f"[LOGIN ERROR] {type(exc).__name__}: {error_msg}")
-        # Fornece mensagens de erro mais específicas
-        if "Invalid login credentials" in error_msg:
+
+    if not email or not password:
+        return jsonify({"error": "Preencha todos os campos."}), 400
+
+    with closing(get_db()) as conn:
+        user = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+
+        if not user or not check_password_hash(user["password_hash"], password):
+            print(f"[LOGIN ERROR] Failed login attempt for email: {email}")
             return jsonify({"error": "Email ou senha incorretos."}), 401
-        elif "Email not confirmed" in error_msg:
-            return jsonify({"error": "Email não confirmado. Verifique sua caixa de entrada."}), 401
-        else:
-            return jsonify({"error": f"Erro ao fazer login: {error_msg}"}), 401
+
+        session["user_id"]   = user["id"]
+        session["user_name"] = user["name"]
+        print(f"[LOGIN SUCCESS] User {email} logged in")
+        return jsonify({"ok": True})
 
 
 @app.route("/register", methods=["POST"])
@@ -269,14 +320,39 @@ def register_post():
     name     = (body.get("name") or "").strip()
     email    = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
+
     if not name or not email or not password:
         return jsonify({"error": "Preencha todos os campos."}), 400
     if len(password) < 6:
         return jsonify({"error": "Senha deve ter pelo menos 6 caracteres."}), 400
+
     try:
-        res = _sb.auth.sign_up({
-            "email":    email,
-            "password": password,
+        with closing(get_db()) as conn:
+            # Verificar se email já existe
+            existing = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+            if existing:
+                return jsonify({"error": "Este email já está cadastrado."}), 409
+
+            # Criar novo usuário
+            user_id = str(uuid.uuid4())
+            password_hash = generate_password_hash(password)
+            created_at = datetime.now().isoformat()
+
+            conn.execute(
+                "INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?,?,?,?,?)",
+                (user_id, name, email, password_hash, created_at)
+            )
+            conn.commit()
+
+            # Auto-login após registro
+            session["user_id"]   = user_id
+            session["user_name"] = name
+            print(f"[REGISTER SUCCESS] New user {email} created and logged in")
+            return jsonify({"ok": True}), 201
+
+    except Exception as exc:
+        print(f"[REGISTER ERROR] {type(exc).__name__}: {str(exc)}")
+        return jsonify({"error": "Erro ao criar conta."}), 400
             "options":  {"data": {"name": name}},
         })
         if not res.user:
@@ -332,17 +408,15 @@ def api_get_accounts():
     uid = session["user_id"]
     print(f"[DEBUG] api_get_accounts - User ID from session: {uid}")
 
-    # Calcula dinamicamente as contagens de operações do Supabase
+    # Calcula dinamicamente as contagens de operações
     op_counts = _calculate_account_op_counts(uid)
 
-    # Buscar contas do Supabase filtrando por user_id
-    response = _sb.table("accounts").select("*").eq("user_id", uid).order("sort_order").execute()
+    # Buscar contas do SQLite filtrando por user_id
+    with closing(get_db()) as conn:
+        rows = conn.execute("SELECT * FROM accounts WHERE user_id=? ORDER BY sort_order", (uid,)).fetchall()
+        print(f"[DEBUG] api_get_accounts - Found {len(rows)} accounts for user {uid}")
 
-    accounts = []
-    if response.data:
-        accounts = [_acc(row, op_counts.get(row["id"], 0)) for row in response.data]
-        print(f"[DEBUG] api_get_accounts - Found {len(accounts)} accounts for user {uid}")
-
+    accounts = [_acc(row, op_counts.get(row["id"], 0)) for row in rows]
     return jsonify({"accounts": accounts, "settings": _settings()})
 
 
@@ -354,40 +428,28 @@ def api_create_account():
     print(f"[DEBUG] api_create_account - User ID: {uid}")
     print(f"[DEBUG] api_create_account - Request body: {body}")
 
-    # Buscar o maior sort_order para o usuário
-    response = _sb.table("accounts").select("sort_order").eq("user_id", uid).order("sort_order", desc=True).limit(1).execute()
-    max_ord = 1
-    if response.data and len(response.data) > 0:
-        max_ord = response.data[0]["sort_order"] + 1
-    print(f"[DEBUG] api_create_account - Max sort_order: {max_ord}")
+    aid  = str(uuid.uuid4())
 
-    account_name = body.get("name", "Nova Conta")
-    print(f"[DEBUG] api_create_account - Creating account: {account_name}")
+    with closing(get_db()) as conn:
+        # Buscar o maior sort_order para o usuário
+        max_ord_result = conn.execute("SELECT COALESCE(MAX(sort_order),0)+1 FROM accounts WHERE user_id=?", (uid,)).fetchone()
+        max_ord = max_ord_result[0]
+        print(f"[DEBUG] api_create_account - Max sort_order: {max_ord}")
 
-    # Criar conta no Supabase
-    new_account = {
-        "id": str(uuid.uuid4()),
-        "name": account_name,
-        "status": body.get("status", "Normal"),
-        "freebet": None,
-        "saldo": None,
-        "condition": 0,
-        "op_conditions": "{}",
-        "notes": '["","","","","",""]',
-        "sort_order": max_ord,
-        "user_id": uid,
-        "op_count": 0,
-        "op_count_date": ''
-    }
+        account_name = body.get("name", "Nova Conta")
+        print(f"[DEBUG] api_create_account - Creating account: {account_name}")
 
-    response = _sb.table("accounts").insert(new_account).execute()
-
-    if response.data and len(response.data) > 0:
-        row = response.data[0]
+        # Incluir as 12 colunas necessárias
+        conn.execute(
+            "INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (aid, account_name, body.get("status", "Normal"),
+             None, None, 0, "{}", '["","","","","",""]', max_ord, uid, 0, '')
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM accounts WHERE id=? AND user_id=?", (aid, uid)).fetchone()
         print(f"[DEBUG] api_create_account - Account created successfully: {row['name']}")
-        return jsonify(_acc(row, 0)), 201
-    else:
-        return jsonify({"error": "Failed to create account"}), 500
+
+    return jsonify(_acc(row, 0)), 201
 
 
 @app.route("/api/accounts/<aid>", methods=["PUT"])
@@ -396,41 +458,33 @@ def api_update_account(aid):
     uid  = session["user_id"]
     body = request.get_json(silent=True) or {}
 
-    # Buscar a conta no Supabase
-    response = _sb.table("accounts").select("*").eq("id", aid).eq("user_id", uid).execute()
+    with closing(get_db()) as conn:
+        row = conn.execute("SELECT * FROM accounts WHERE id=? AND user_id=?", (aid, uid)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
 
-    if not response.data or len(response.data) == 0:
-        return jsonify({"error": "not found"}), 404
+        a = _acc(row)
+        for f in ("name", "status", "freebet", "saldo", "condition", "op_conditions", "notes"):
+            if f in body:
+                a[f] = body[f]
 
-    a = _acc(response.data[0])
-    for f in ("name", "status", "freebet", "saldo", "condition", "op_conditions", "notes"):
-        if f in body:
-            a[f] = body[f]
+        conn.execute(
+            "UPDATE accounts SET name=?,status=?,freebet=?,saldo=?,condition=?,op_conditions=?,notes=? WHERE id=? AND user_id=?",
+            (a["name"], a["status"], a["freebet"], a["saldo"], a["condition"],
+             json.dumps(a["op_conditions"]), json.dumps(a["notes"]), aid, uid)
+        )
+        conn.commit()
 
-    # Atualizar no Supabase
-    update_data = {
-        "name": a["name"],
-        "status": a["status"],
-        "freebet": a["freebet"],
-        "saldo": a["saldo"],
-        "condition": a["condition"],
-        "op_conditions": json.dumps(a["op_conditions"]),
-        "notes": json.dumps(a["notes"])
-    }
-
-    response = _sb.table("accounts").update(update_data).eq("id", aid).eq("user_id", uid).execute()
-
-    if response.data and len(response.data) > 0:
-        return jsonify(a)
-    else:
-        return jsonify({"error": "Failed to update account"}), 500
+    return jsonify(a)
 
 
 @app.route("/api/accounts/<aid>", methods=["DELETE"])
 @login_required
 def api_delete_account(aid):
     uid = session["user_id"]
-    _sb.table("accounts").delete().eq("id", aid).eq("user_id", uid).execute()
+    with closing(get_db()) as conn:
+        conn.execute("DELETE FROM accounts WHERE id=? AND user_id=?", (aid, uid))
+        conn.commit()
     return jsonify({"ok": True})
 
 
@@ -440,11 +494,9 @@ def api_reset_accounts():
     uid         = session["user_id"]
     empty_notes = json.dumps(["", "", "", "", "", ""])
 
-    _sb.table("accounts").update({
-        "condition": 0,
-        "op_conditions": "{}",
-        "notes": empty_notes
-    }).eq("user_id", uid).execute()
+    with closing(get_db()) as conn:
+        conn.execute("UPDATE accounts SET condition=0, op_conditions='{}', notes=? WHERE user_id=?", (empty_notes, uid))
+        conn.commit()
 
     return jsonify({"ok": True})
 
@@ -459,6 +511,64 @@ def api_reorder_accounts():
             conn.execute("UPDATE accounts SET sort_order=? WHERE id=? AND user_id=?", (i, aid, uid))
         conn.commit()
     return jsonify({"ok": True})
+
+
+# ── Backup & Restore API ───────────────────────────────────────────────────────────
+
+@app.route("/api/backups", methods=["GET"])
+@login_required
+def list_backups():
+    """Lista todos os backups disponíveis."""
+    backups = []
+    if os.path.exists(BACKUP_DIR):
+        for f in os.listdir(BACKUP_DIR):
+            if f.endswith('.db'):
+                path = os.path.join(BACKUP_DIR, f)
+                backups.append({
+                    "filename": f,
+                    "size": os.path.getsize(path),
+                    "created": datetime.fromtimestamp(os.path.getctime(path)).isoformat()
+                })
+
+    return jsonify(sorted(backups, key=lambda x: x["created"], reverse=True))
+
+
+@app.route("/api/backup/restore", methods=["POST"])
+@login_required
+def restore_backup():
+    """Restaura um backup específico."""
+    body = request.get_json(silent=True) or {}
+    backup_file = body.get("backup_file")
+
+    if not backup_file:
+        return jsonify({"error": "backup_file required"}), 400
+
+    backup_path = os.path.join(BACKUP_DIR, backup_file)
+
+    if not os.path.exists(backup_path):
+        return jsonify({"error": "Backup not found"}), 404
+
+    try:
+        # Fazer backup do estado atual antes de restaurar
+        backup_database()
+
+        # Restaurar backup
+        shutil.copy2(backup_path, DB_PATH)
+        print(f"[RESTORE] Backup restored: {backup_file}")
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"[RESTORE ERROR] {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/info", methods=["GET"])
+def app_info():
+    """Retorna informações sobre a versão do app."""
+    return jsonify({
+        "name": __app_name__,
+        "version": __version__,
+        "data_dir": APP_DATA_DIR
+    })
 
 
 # ── Settings API ───────────────────────────────────────────────────────────────
